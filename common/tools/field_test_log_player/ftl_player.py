@@ -704,6 +704,10 @@ if __name__ == '__main__':
         if PATH == "":
             raise getopt.error("no path")
         file_list = os.listdir(PATH)
+        for file in file_list:
+            if file[0] == '.':
+                file_list.remove(file)
+                print(f"Hidden file '{file}' will be ignored.")
     except getopt.error:
         show_usage()
         sys.exit(2)
