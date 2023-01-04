@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 
 plt.rcParams["figure.autolayout"] = True
 
-TIMEKEEPER_MAC = '00:30:1a:4f:5b:2f'
-EARTH_RADIUS = 6371000  # Meters
+TIMEKEEPER_MAC = '00:30:1a:4f:5b:2f'  # NodeNetworkEvaluator.timestamps records this drone's timestamps
+EARTH_RADIUS = 6371000  # in meters
 
 
 class NodeNetworkEvaluator(NodeNetwork):
@@ -56,12 +56,12 @@ class NodeNetworkEvaluator(NodeNetwork):
             self.timestamps = [t - timestamps[0] for t in timestamps]
 
         else:
-            print("Please give filename")
+            print("Please provide a filename")
 
     def check_linearity_of_timesteps(self):
         """
-        Checks whether the row-offset matching was done correctly. The timestamp data is somewhat linear in its indices
-        apart from occasional skips...
+        Checks whether the row-offset matching was done correctly
+        The timestamp data is somewhat linear in its indices apart from occasional skips...
         """
         plt.plot(range(0, len(self.timestamps)), 'black', label="Linear relationship")
         plt.plot(self.timestamps, 'r*', linestyle='dashed', label=f"Timestamps recorded at {TIMEKEEPER_MAC}")
@@ -95,10 +95,9 @@ class NodeNetworkEvaluator(NodeNetwork):
         plt.show()
 
 
-def check_distance_calculations(center=(3, 3), sidelength=0.1, res=120):
-    """
-    Overlays distance calculated using UTM coordinates with Euclidean distance
-    vs. lat-lon coordinates with geodesic distance
+def check_distance_calculations(center=(3, 3), sidelength=0.01, res=25):
+    """ Visually verify that distance is being calculated correctly
+    Overlays distance calculated using UTM coordinates with Euclidean distance vs. lat-lon with geodesic distance
     :param center: origin of distance calculation in lat lon (e.g., coordinates of the receiving drone)
     :param sidelength: side length of the grid corresponding to x and y axes
     :param res: resolution of the grid
@@ -121,13 +120,12 @@ def check_distance_calculations(center=(3, 3), sidelength=0.1, res=120):
             utm2 = utm.from_latlon(lat2, lon2)[0:2]
             z_euc[i][j] = get_euclidean_distance(*utm1, *utm2)
 
-    fig = plt.figure()
     ax = plt.axes(projection='3d')
-    surf1 = ax.plot_surface(x, y, z_geo, label="Geodesic Distance from LatLon", color='b', alpha=0.75)
-    surf2 = ax.plot_surface(x, y, z_euc, label="Euclidean Distance from UTM", color='g', alpha=0.75)
+    _ = ax.plot_surface(x, y, z_geo, label="Geodesic Distance from LatLon", color='b', alpha=0.75)
+    _ = ax.plot_surface(x, y, z_euc, label="Euclidean Distance from UTM", color='g', alpha=0.75)
     plt.xlabel("Latitude")
     plt.ylabel("Longitude")
-    plt.title("Using geodesic/great circle distance (blue) \n vs. \n Euclidean distance (green) within the same UTM zone")
+    plt.title("Using geodesic/great circle distance (blue) \n vs. Euclidean distance (green)")
     plt.show()
 
 
@@ -137,8 +135,8 @@ def get_euclidean_distance(x1, y1, x2, y2):
 
 def get_geodesic_distance(phi1, lam1, phi2, lam2):
     """ Get Geodesic distance from lat lon using the haversine function method
-    :param phi1: latitude in radians
-    :param lam2: longitude in radians
+    :param phi1/2: latitude in radians
+    :param lam1/2: longitude in radians
     :return: distance in meters
     """
     hav_theta = hav(phi2-phi1) + (1 - hav(phi1-phi2) - hav(phi1+phi2))*hav(lam2-lam1)
@@ -174,8 +172,8 @@ if __name__ == '__main__':
 
     runner = NodeNetworkEvaluator(False, [], False)
     runner.collect_data(PATH, file_list)
-    # check_distance_calculations()
+
+    # Uncomment these to verify the corresponding functionality...
     # runner.check_linearity_of_timesteps()
+    # check_distance_calculations()
     runner.check_pathloss()
-
-
