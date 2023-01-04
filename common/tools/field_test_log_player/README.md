@@ -48,3 +48,6 @@ Active keys in plotter view:
     spacebar    - pause/resume, zooming possible during pause
     +           - skip next 30seconds in log file
     -           - rewind 30seconds in log file
+
+### Additional Tools in Forked Version:
+Use ```python3 rssi-eval.py -p "./data/"``` to run rssi evaluation tool
