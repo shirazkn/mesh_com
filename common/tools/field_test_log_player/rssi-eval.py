@@ -8,6 +8,8 @@ from ftl_player import NodeNetwork
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.colors import Normalize
 
 plt.rcParams["figure.autolayout"] = True
 
@@ -68,7 +70,7 @@ class NodeNetworkEvaluator(NodeNetwork):
         plt.xlabel("Index"); plt.ylabel("Timestamp"); plt.legend()
         plt.show()
 
-    def check_pathloss(self):
+    def check_pathloss(self, tx_mac=None, rx_mac=None):
         """
         Fits the RSSI data against the log distance path loss model for RSS
         P_Rx = P_Tx - c - 10.plf.log(distance)
@@ -76,20 +78,30 @@ class NodeNetworkEvaluator(NodeNetwork):
             - Transmission powers are reported to be the same for all drones (27dBm)
             - c and plf (path loss factor) are constants which should be the same for all drones in the vicinity
             - Units of power are dBm, base of log can be anything
+        :param tx_mac and rx_mac: only plot links transmitted/received from those nodes
         """
         distances = []
         rssi_vals = []
+        colors = []  # Used to differentiate rssi values recorded at the start of the simulation vs. the end
+        cmap = cm.brg
+        norm = Normalize(vmin=0, vmax=len(self.timestamps))
+
         for t in range(len(self.timestamps)):
             for mac1 in self.node_macs:
+                if rx_mac and not rx_mac == mac1:
+                    continue
                 nd1 = self.node_data[mac1]
                 phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
                 for i in range(len(nd1["neighbours"][t])):
+                    if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
+                        continue
                     nd2 = self.node_data[nd1["neighbours"][t][i]]
                     phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
                     distances.append(get_geodesic_distance(phi1, lam1, phi2, lam2))
                     rssi_vals.append(float(nd1["rssi"][t][i]))
+                    colors.append(cmap(norm(t)))
         log_distances = [np.log10(d) for d in distances]
-        plt.scatter(log_distances, rssi_vals, s=1.0, c='black')
+        plt.scatter(log_distances, rssi_vals, s=8.0, alpha=0.5, c=colors)
         plt.xlabel(r"$log_{10}($distance (in m)$)$")
         plt.ylabel(r"RSSI (in $dBm$)")
         plt.show()
@@ -170,10 +182,10 @@ if __name__ == '__main__':
         print("Provide a path to csv files...")
         sys.exit(2)
 
-    runner = NodeNetworkEvaluator(False, [], False)
-    runner.collect_data(PATH, file_list)
+    eval = NodeNetworkEvaluator(False, [], False)
+    eval.collect_data(PATH, file_list)
 
     # Uncomment these to verify the corresponding functionality...
     # runner.check_linearity_of_timesteps()
     # check_distance_calculations()
-    runner.check_pathloss()
+    eval.check_pathloss(tx_mac=eval.node_macs[6])
