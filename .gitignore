@@ -6,3 +6,5 @@
 *.pyc
 .idea/
 *.enc
+**/.DS_Store
+/common/tools/field_test_log_player/data/*.csv
