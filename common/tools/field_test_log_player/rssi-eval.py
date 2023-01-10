@@ -1,8 +1,9 @@
 import getopt
 import os
 import sys
-
+import time
 import utm
+import pylab
 
 from ftl_player import NodeNetwork
 
@@ -10,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize
+from matplotlib.pyplot import pause
 
 plt.rcParams["figure.autolayout"] = True
 
@@ -70,7 +72,7 @@ class NodeNetworkEvaluator(NodeNetwork):
         plt.xlabel("Index"); plt.ylabel("Timestamp"); plt.legend()
         plt.show()
 
-    def check_pathloss(self, tx_mac=None, rx_mac=None):
+    def check_pathloss(self, tx_mac=None, rx_mac=None, video=False):
         """
         Fits the RSSI data against the log distance path loss model for RSS
         P_Rx = P_Tx - c - 10.plf.log(distance)
@@ -82,29 +84,68 @@ class NodeNetworkEvaluator(NodeNetwork):
         """
         distances = []
         rssi_vals = []
-        colors = []  # Used to differentiate rssi values recorded at the start of the simulation vs. the end
-        cmap = cm.brg
-        norm = Normalize(vmin=0, vmax=len(self.timestamps))
-
-        for t in range(len(self.timestamps)):
-            for mac1 in self.node_macs:
-                if rx_mac and not rx_mac == mac1:
-                    continue
-                nd1 = self.node_data[mac1]
-                phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
-                for i in range(len(nd1["neighbours"][t])):
-                    if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
+        if not video:
+            cmap = cm.brg
+            norm = Normalize(vmin=0, vmax=len(self.timestamps))
+            colors = []  # Used to differentiate rssi values recorded at the start of the simulation vs. the end
+            for t in range(len(self.timestamps)):
+                for mac1 in self.node_macs:
+                    if rx_mac and not rx_mac == mac1:
                         continue
-                    nd2 = self.node_data[nd1["neighbours"][t][i]]
-                    phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
-                    distances.append(get_geodesic_distance(phi1, lam1, phi2, lam2))
-                    rssi_vals.append(float(nd1["rssi"][t][i]))
-                    colors.append(cmap(norm(t)))
-        log_distances = [np.log10(d) for d in distances]
-        plt.scatter(log_distances, rssi_vals, s=8.0, alpha=0.5, c=colors)
-        plt.xlabel(r"$log_{10}($distance (in m)$)$")
-        plt.ylabel(r"RSSI (in $dBm$)")
-        plt.show()
+                    nd1 = self.node_data[mac1]
+                    phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
+                    for i in range(len(nd1["neighbours"][t])):
+                        if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
+                            continue
+                        nd2 = self.node_data[nd1["neighbours"][t][i]]
+                        phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
+                        distances.append(get_geodesic_distance(phi1, lam1, phi2, lam2))
+                        rssi_vals.append(float(nd1["rssi"][t][i]))
+                        colors.append(cmap(norm(t)))
+            log_distances = [np.log10(d) for d in distances]
+            plt.scatter(log_distances, rssi_vals, s=8.0, alpha=0.5, c=colors)
+            plt.xlabel(r"$log_{10}($distance (in m)$)$")
+            plt.ylabel(r"RSSI (in $dBm$)")
+            plt.show()
+        else:
+            pylab.ion()
+            _ = pylab.get_current_fig_manager()
+
+            if tx_mac or rx_mac:
+                raise NotImplementedError
+
+            plot_window = 15
+            cmap = cm.YlOrRd
+            norm = Normalize(vmin=0, vmax=plot_window-1)
+            distances = [[] for _ in range(plot_window)]
+            rssi_vals = [[] for _ in range(plot_window)]
+            for t in range(len(self.timestamps)):
+                pylab.clf()
+                distances.pop(0)
+                rssi_vals.pop(0)
+                distances.append([])
+                rssi_vals.append([])
+                for mac1 in self.node_macs:
+                    if rx_mac and not rx_mac == mac1:
+                        continue
+                    nd1 = self.node_data[mac1]
+                    phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
+                    for i in range(len(nd1["neighbours"][t])):
+                        if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
+                            continue
+                        nd2 = self.node_data[nd1["neighbours"][t][i]]
+                        phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
+                        distances[-1].append(get_geodesic_distance(phi1, lam1, phi2, lam2))
+                        rssi_vals[-1].append(float(nd1["rssi"][t][i]))
+                for i in range(plot_window):
+                    plt.scatter([np.log10(d) for d in distances[-(1 + i)]], rssi_vals[-(1 + i)],
+                                color=cmap(norm(plot_window-i-1)**4), alpha=norm(plot_window-i-1)**4, s=8.0)
+                    plt.xlabel(r"$log_{10}($distance (in m)$)$")
+                    plt.ylabel(r"RSSI (in $dBm$)")
+                    pylab.xlim(0.8, 2.6)
+                    pylab.ylim(-87, -30)
+                plt.show()
+                pause(0.0001)
 
 
 def check_distance_calculations(center=(3, 3), sidelength=0.01, res=25):
@@ -188,4 +229,4 @@ if __name__ == '__main__':
     # Uncomment these to verify the corresponding functionality...
     # runner.check_linearity_of_timesteps()
     # check_distance_calculations()
-    eval.check_pathloss(tx_mac=eval.node_macs[6])
+    eval.check_pathloss(video=True)
