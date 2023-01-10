@@ -75,10 +75,8 @@ class Node:
         self.my_mac = __filename.split("_")[2].split(".")[0]
         df = pd.read_csv(f"{__path}/{__filename}", engine='python', on_bad_lines='warn')
 
-        df.drop(columns=["channel", "txpower [dBm]",
-                         "RX MCS [MAC,MCS;MAC,MCS ...]",
-                         "altitude", "PDOP",
-                         "cpu temp [mC]", "wifi temp [mC]", "tmp100 [mC]",
+        df.drop(columns=["channel", "RX MCS [MAC,MCS;MAC,MCS ...]",
+                         "PDOP", "cpu temp [mC]", "wifi temp [mC]", "tmp100 [mC]",
                          "battery voltage [uV]", "battery current [uA]", "nRF voltage [mV]",
                          "nRF current [mA]", "3v3 voltage [mV]", "3v3 current [mA]"], inplace=True)
 
