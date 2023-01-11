@@ -41,7 +41,7 @@ class NodeNetworkEvaluator(NodeNetwork):
                 if len(node._Node__f_rssi) < total_time:
                     total_time = len(node._Node__f_rssi)
 
-            self.node_data = {node.get_mac(): {"neighbours": [], "rssi": [], "location": []}
+            self.node_data = {node.get_mac(): {"neighbours": [], "rssi": [], "location": [], "altitude": []}
                               for node in self.network_nodes}
             timestamps = []
             for _ in range(total_time):
@@ -51,6 +51,7 @@ class NodeNetworkEvaluator(NodeNetwork):
                     self.node_data[node.get_mac()]["rssi"].append([_str.split(',')[1].split(' ')[0] for _str in node.get_rssi().split(';')])
                     self.node_data[node.get_mac()]["location"].append((node._Node__f_lat_loc[node._Node__matched_row_offset],
                                                                        node._Node__f_lon_loc[node._Node__matched_row_offset]))
+                    self.node_data[node.get_mac()]["altitude"].append(node._Node__f_altitude[node._Node__matched_row_offset])
 
                     if node.get_mac() == TIMEKEEPER_MAC:
                         timestamps.append(node.get_time_stamp_in_s(node._Node__matched_row_offset))
@@ -58,6 +59,8 @@ class NodeNetworkEvaluator(NodeNetwork):
                 self.sec_offset_from_start += 1
 
             self.timestamps = [t - timestamps[0] for t in timestamps]
+            for node in self.network_nodes:
+                pad_zeroes(self.node_data[node.get_mac()]["altitude"])
 
         else:
             print("Please provide a filename")
@@ -93,13 +96,14 @@ class NodeNetworkEvaluator(NodeNetwork):
                     if rx_mac and not rx_mac == mac1:
                         continue
                     nd1 = self.node_data[mac1]
-                    phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
+                    phi1, lam1, alt1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1]), nd1["altitude"][t]]
                     for i in range(len(nd1["neighbours"][t])):
                         if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
                             continue
                         nd2 = self.node_data[nd1["neighbours"][t][i]]
-                        phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
-                        distances.append(get_geodesic_distance(phi1, lam1, phi2, lam2))
+                        phi2, lam2, alt2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1]), nd2["altitude"][t]]
+                        h_dist = get_geodesic_distance(phi1, lam1, phi2, lam2)
+                        distances.append(get_euclidean_distance(h_dist, alt2-alt1))
                         rssi_vals.append(float(nd1["rssi"][t][i]))
                         colors.append(cmap(norm(t)))
             log_distances = [np.log10(d) for d in distances]
@@ -107,6 +111,7 @@ class NodeNetworkEvaluator(NodeNetwork):
             plt.xlabel(r"$log_{10}($distance (in m)$)$")
             plt.ylabel(r"RSSI (in $dBm$)")
             plt.show()
+
         else:
             pylab.ion()
             _ = pylab.get_current_fig_manager()
@@ -114,7 +119,7 @@ class NodeNetworkEvaluator(NodeNetwork):
             if tx_mac or rx_mac:
                 raise NotImplementedError
 
-            plot_window = 15
+            plot_window = 5
             cmap = cm.YlOrRd
             norm = Normalize(vmin=0, vmax=plot_window-1)
             distances = [[] for _ in range(plot_window)]
@@ -129,23 +134,29 @@ class NodeNetworkEvaluator(NodeNetwork):
                     if rx_mac and not rx_mac == mac1:
                         continue
                     nd1 = self.node_data[mac1]
-                    phi1, lam1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1])]
+                    phi1, lam1, alt1 = [np.deg2rad(nd1["location"][t][0]), np.deg2rad(nd1["location"][t][1]), nd1["altitude"][t]]
                     for i in range(len(nd1["neighbours"][t])):
                         if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
                             continue
                         nd2 = self.node_data[nd1["neighbours"][t][i]]
-                        phi2, lam2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1])]
-                        distances[-1].append(get_geodesic_distance(phi1, lam1, phi2, lam2))
+                        phi2, lam2, alt2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1]), nd2["altitude"][t]]
+                        h_dist = get_geodesic_distance(phi1, lam1, phi2, lam2)
+                        distances[-1].append(get_euclidean_distance(h_dist, alt2-alt1))
                         rssi_vals[-1].append(float(nd1["rssi"][t][i]))
                 for i in range(plot_window):
                     plt.scatter([np.log10(d) for d in distances[-(1 + i)]], rssi_vals[-(1 + i)],
                                 color=cmap(norm(plot_window-i-1)**4), alpha=norm(plot_window-i-1)**4, s=8.0)
                     plt.xlabel(r"$log_{10}($distance (in m)$)$")
                     plt.ylabel(r"RSSI (in $dBm$)")
-                    pylab.xlim(0.8, 2.6)
-                    pylab.ylim(-87, -30)
+
+                plt.gca().set_xticks(np.linspace(0, 3.0, 61), minor=True)
+                plt.gca().set_yticks(np.linspace(-90, -30, 61), minor=True)
+                plt.grid(which='minor', alpha=0.2)
+                plt.grid(which='major', alpha=0.5)
+                pylab.xlim(0.8, 2.6)
+                pylab.ylim(-87, -30)
                 plt.show()
-                pause(0.0001)
+                pause(0.00001)
 
 
 def check_distance_calculations(center=(3, 3), sidelength=0.01, res=25):
@@ -182,8 +193,21 @@ def check_distance_calculations(center=(3, 3), sidelength=0.01, res=25):
     plt.show()
 
 
-def get_euclidean_distance(x1, y1, x2, y2):
+def get_euclidean_distance(x1, y1, x2=0.0, y2=0.0):
     return np.sqrt((x2-x1)**2 + (y2-y1)**2)
+
+
+def pad_zeroes(array, thresh=1e-2):
+    # Make sure first entry is non-zero
+    i = 1
+    while array[0] < thresh:
+        array[0] = array[i]
+        i += 1
+
+    # Pad remaining entries
+    for i in range(1, len(array)):
+        if array[i] < thresh:
+            array[i] = array[i-1]
 
 
 def get_geodesic_distance(phi1, lam1, phi2, lam2):

@@ -38,11 +38,13 @@ class Node:
         self.__f_gps_timestamps = []
         self.__f_lat_loc = []
         self.__f_lon_loc = []
+        self.__f_altitude = []
         self.__f_rssi = []
         self.__f_noise = []
         self.__f_txmcs = []
         self.__f_txtp = []
         self.__f_rxtp = []
+        self.__f_tx_pwr = []
 
         self.my_mac = None  # node MAC address
         self.__matched_row_offset = 0  # row offset
@@ -67,8 +69,10 @@ class Node:
         lat_name = "latitude"
         gps_time = "GPS time"
         lon_name = "longitude"
+        alt_name = "altitude"
         rssi_name = "rssi [MAC,dBm;MAC,dBm ...]"
         txmcs_name = "TX MCS [MAC,MCS;MAC,MCS ...]"
+        tx_pwr_name = "txpower [dBm]"
         rx_tp_name = "RX throughput [Bits/s]"
         tx_tp_name = "TX throughput [Bits/s]"
 
@@ -99,6 +103,8 @@ class Node:
             self.__f_gps_timestamps = [ns / 1000000000 for ns in df[gps_time].values.tolist()]
             self.__f_lat_loc = df[lat_name].values.tolist()
             self.__f_lon_loc = df[lon_name].values.tolist()
+            self.__f_altitude = df[alt_name].values.tolist()
+
         else:
             # use system timestamps in indoor case
             df[timestamp_name].replace('', np.nan, inplace=True)
@@ -120,6 +126,7 @@ class Node:
         self.__f_txmcs = df[txmcs_name].values.tolist()
         self.__f_rxtp = df[rx_tp_name].values.tolist()
         self.__f_txtp = df[tx_tp_name].values.tolist()
+        self.__f_tx_pwr = df[tx_pwr_name].values.tolist()
 
     def get_location_utm(self):
         """
@@ -130,6 +137,13 @@ class Node:
             utm.from_latlon(self.__f_lat_loc[self.__matched_row_offset],
                             self.__f_lon_loc[self.__matched_row_offset])
         return easting, northing
+
+    def get_altitude(self):
+        """
+        get location from synced time offset point
+        :return:
+        """
+        return self.__f_altitude[self.__matched_row_offset]
 
     def get_rssi(self):
         """
@@ -165,6 +179,13 @@ class Node:
         :return:
         """
         return self.__f_rxtp[self.__matched_row_offset]
+
+    def get_tx_power(self):
+        """
+        get RX TrhoughPut from synced time offset point
+        :return:
+        """
+        return self.__f_tx_pwr[self.__matched_row_offset]
 
     def get_originator(self):
         """
