@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize
 from matplotlib.pyplot import pause
+import matplotlib as mpl
 
 plt.rcParams["figure.autolayout"] = True
 
@@ -41,14 +42,22 @@ class NodeNetworkEvaluator(NodeNetwork):
                 if len(node._Node__f_rssi) < total_time:
                     total_time = len(node._Node__f_rssi)
 
-            self.node_data = {node.get_mac(): {"neighbours": [], "rssi": [], "location": [], "altitude": []}
+            self.node_data = {node.get_mac(): {"neighbours": [], "rssi": [], "neighbour_txmcs": [], "location": [], "altitude": []}
                               for node in self.network_nodes}
             timestamps = []
             for _ in range(total_time):
                 for node in self.network_nodes:
                     node.update_row_offset_from_seconds_offset(self.sec_offset_from_start)
+
+                for node in self.network_nodes:
                     self.node_data[node.get_mac()]["neighbours"].append([_str.split(',')[0] for _str in node.get_rssi().split(';')])
                     self.node_data[node.get_mac()]["rssi"].append([_str.split(',')[1].split(' ')[0] for _str in node.get_rssi().split(';')])
+
+                    self.node_data[node.get_mac()]["neighbour_txmcs"].append([])
+                    for neighbor_mac in self.node_data[node.get_mac()]["neighbours"][-1]:
+                        neighbor_mcs = self._get_txmcs(from_mac=node.my_mac, to_mac=neighbor_mac)
+                        self.node_data[node.get_mac()]["neighbour_txmcs"][-1].append(neighbor_mcs)
+
                     self.node_data[node.get_mac()]["location"].append((node._Node__f_lat_loc[node._Node__matched_row_offset],
                                                                        node._Node__f_lon_loc[node._Node__matched_row_offset]))
                     self.node_data[node.get_mac()]["altitude"].append(node._Node__f_altitude[node._Node__matched_row_offset])
@@ -65,6 +74,27 @@ class NodeNetworkEvaluator(NodeNetwork):
         else:
             print("Please provide a filename")
 
+    def get_node_from_mac(self, mac):
+        for node in self.network_nodes:
+            if node.my_mac == mac:
+                return node
+        raise ValueError("There is no node with the specified MAC!")
+
+    def _get_txmcs(self, from_mac, to_mac):
+        to_node = self.get_node_from_mac(to_mac)
+        from_node = self.get_node_from_mac(from_mac)
+        txmcs = None
+        for step in [0, -1, -2, -3, 1, 2, 3]:
+            if txmcs:
+                break
+            for mac_mcs in from_node._Node__f_txmcs[from_node._Node__matched_row_offset - step].split(';'):
+                if mac_mcs.split(',')[0] == to_node.my_mac:
+                    txmcs = mac_mcs.split(',')[1]
+                    break
+        if not txmcs:
+            raise ValueError(f"Could not find TX MCS at {self.sec_offset_from_start} seconds.")
+        return int(txmcs)
+
     def check_linearity_of_timesteps(self):
         """
         Checks whether the row-offset matching was done correctly
@@ -75,7 +105,7 @@ class NodeNetworkEvaluator(NodeNetwork):
         plt.xlabel("Index"); plt.ylabel("Timestamp"); plt.legend()
         plt.show()
 
-    def check_pathloss(self, tx_mac=None, rx_mac=None, video=False):
+    def check_pathloss(self, tx_mac=None, rx_mac=None, tx_mcs=None, video=False):
         """
         Fits the RSSI data against the log distance path loss model for RSS
         P_Rx = P_Tx - c - 10.plf.log(distance)
@@ -88,8 +118,9 @@ class NodeNetworkEvaluator(NodeNetwork):
         distances = []
         rssi_vals = []
         if not video:
-            cmap = cm.brg
-            norm = Normalize(vmin=0, vmax=len(self.timestamps))
+            cmap = mpl.colormaps["gist_ncar"]
+            # norm = Normalize(vmin=0, vmax=len(self.timestamps))
+            norm = Normalize(vmin=0, vmax=18)
             colors = []  # Used to differentiate rssi values recorded at the start of the simulation vs. the end
             for t in range(len(self.timestamps)):
                 for mac1 in self.node_macs:
@@ -100,26 +131,35 @@ class NodeNetworkEvaluator(NodeNetwork):
                     for i in range(len(nd1["neighbours"][t])):
                         if tx_mac and not tx_mac == nd1["neighbours"][t][i]:
                             continue
+                        if tx_mcs and not tx_mcs == nd1["neighbour_txmcs"][t][i]:
+                            continue
                         nd2 = self.node_data[nd1["neighbours"][t][i]]
                         phi2, lam2, alt2 = [np.deg2rad(nd2["location"][t][0]), np.deg2rad(nd2["location"][t][1]), nd2["altitude"][t]]
                         h_dist = get_geodesic_distance(phi1, lam1, phi2, lam2)
                         distances.append(get_euclidean_distance(h_dist, alt2-alt1))
                         rssi_vals.append(float(nd1["rssi"][t][i]))
-                        colors.append(cmap(norm(t)))
+                        colors.append(cmap(norm(nd1["neighbour_txmcs"][t][i])))
             log_distances = [np.log10(d) for d in distances]
-            plt.scatter(log_distances, rssi_vals, s=8.0, alpha=0.5, c=colors)
+            plt.scatter(log_distances, rssi_vals, s=5.0, alpha=0.35, c=colors)
             plt.xlabel(r"$log_{10}($distance (in m)$)$")
             plt.ylabel(r"RSSI (in $dBm$)")
+            title = ""
+            if tx_mac:
+                title += f"TX Node: {tx_mac} \n"
+            if rx_mac:
+                title += f"RX Node: {rx_mac}"
+            plt.title(title)
+            pylab.xlim(0.8, 2.5)
+            pylab.ylim(-86, -30)
             plt.show()
 
         else:
             pylab.ion()
-            _ = pylab.get_current_fig_manager()
+            fig = pylab.get_current_fig_manager()
+            fig.canvas.mpl_connect('close_event', self._NodeNetwork__on_close)
+            fig.canvas.mpl_connect('key_press_event', self._NodeNetwork__on_key_press_event)
 
-            if tx_mac or rx_mac:
-                raise NotImplementedError
-
-            plot_window = 5
+            plot_window = 4
             cmap = cm.YlOrRd
             norm = Normalize(vmin=0, vmax=plot_window-1)
             distances = [[] for _ in range(plot_window)]
@@ -144,15 +184,15 @@ class NodeNetworkEvaluator(NodeNetwork):
                         distances[-1].append(get_euclidean_distance(h_dist, alt2-alt1))
                         rssi_vals[-1].append(float(nd1["rssi"][t][i]))
                 for i in range(plot_window):
-                    plt.scatter([np.log10(d) for d in distances[-(1 + i)]], rssi_vals[-(1 + i)],
-                                color=cmap(norm(plot_window-i-1)**4), alpha=norm(plot_window-i-1)**4, s=8.0)
+                    plt.scatter([np.log10(d) for d in distances[-(plot_window)+i]], rssi_vals[-(plot_window)+i],
+                                color=cmap(norm(i)**4), alpha=norm(i), s=8.0)
                     plt.xlabel(r"$log_{10}($distance (in m)$)$")
                     plt.ylabel(r"RSSI (in $dBm$)")
 
-                plt.gca().set_xticks(np.linspace(0, 3.0, 61), minor=True)
-                plt.gca().set_yticks(np.linspace(-90, -30, 61), minor=True)
-                plt.grid(which='minor', alpha=0.2)
-                plt.grid(which='major', alpha=0.5)
+                # plt.gca().set_xticks(np.linspace(0, 3.0, 61), minor=True)
+                # plt.gca().set_yticks(np.linspace(-90, -30, 61), minor=True)
+                # plt.grid(which='minor', alpha=0.2)
+                # plt.grid(which='major', alpha=0.5)
                 pylab.xlim(0.8, 2.6)
                 pylab.ylim(-87, -30)
                 plt.show()
@@ -236,7 +276,7 @@ if __name__ == '__main__':
                 PATH = arg
 
         if PATH == "":
-            raise getopt.error("no path")
+            PATH = "./data"
         file_list = os.listdir(PATH)
         for file in file_list:
             if file[0] == '.':
@@ -253,4 +293,5 @@ if __name__ == '__main__':
     # Uncomment these to verify the corresponding functionality...
     # runner.check_linearity_of_timesteps()
     # check_distance_calculations()
-    eval.check_pathloss(video=True)
+    eval.check_pathloss(video=False)
+
